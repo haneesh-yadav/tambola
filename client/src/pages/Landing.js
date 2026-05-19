@@ -77,7 +77,7 @@ export default function Landing() {
         </div>
 
         <p className="footer-note">
-          COPYRIGHT © 2026 HANEESH
+          COPYRIGHT © 2026 | HANEESH
         </p>
       </div>
     </div>
