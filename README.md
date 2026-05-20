@@ -98,41 +98,6 @@ tambola/
 
 ---
 
-## 🔌 Deploying for an Event
-
-### Option A: Local Network (Recommended for indoor events)
-
-1. Start the server on a laptop connected to the event WiFi
-2. Find your laptop's local IP: `ipconfig` (Windows) or `ifconfig` (Mac/Linux)
-3. Set environment variable: `REACT_APP_SERVER_URL=http://YOUR_IP:3001`
-4. Build the client: `cd client && npm run build`
-5. Serve the build folder or set up Express to serve static files
-6. Share `http://YOUR_IP:3000` with players
-
-### Option B: Cloud Deployment
-
-**Server** (e.g., Railway, Render, Fly.io):
-```bash
-cd server && npm start
-```
-Set `PORT` environment variable as needed.
-
-**Client** (e.g., Vercel, Netlify):
-```bash
-cd client
-REACT_APP_SERVER_URL=https://your-server-url.com npm run build
-```
-Deploy the `build/` folder.
-
-### Environment Variables
-
-| Variable | Default | Description |
-|---|---|---|
-| `PORT` | `3001` | Server port |
-| `REACT_APP_SERVER_URL` | `http://localhost:3001` | Server URL for client |
-
----
-
 ## 🎲 Game Rules
 
 | Category | How to win |
