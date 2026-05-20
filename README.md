@@ -1,4 +1,4 @@
-# 🎯 Tambola — VIT-STELLAR
+# 🎯 Tambola Game
 
 A real-time, multiplayer Tambola (Housie/Bingo) web application built for tambola lovers. Supports up to 200+ simultaneous players with live number calling, ticket management, and win verification.
 
@@ -170,4 +170,4 @@ Each category can only be won **once**. Claims are verified server-side — no c
 
 ---
 
-Built with ❤️ for VIT-STELLAR · Season 2025
+Built with ❤️ by Haneesh · Season 2026
