@@ -1,11 +1,29 @@
-import React from 'react';
+import React, { useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useSocket } from '../context/SocketContext';
 import './Landing.css';
 
 export default function Landing() {
   const navigate = useNavigate();
-  const { connected } = useSocket();
+  const { socket, connected } = useSocket();
+
+  useEffect(() => {
+    if (!socket) return;
+    socket.on('room:created', ({ roomId }) => {
+      navigate(`/host/${roomId}`);
+    });
+    return () => {
+      socket.off('room:created');
+    };
+  }, [socket, navigate]);
+
+  const handleHost = () => {
+    if (!socket || !connected) {
+      alert("Server is not connected. Please try again.");
+      return;
+    }
+    socket.emit('room:create');
+  };
 
   return (
     <div className="landing">
@@ -14,11 +32,6 @@ export default function Landing() {
       <div className="landing-glow" />
 
       <div className="landing-content animate-fadeUp">
-        {/* Club badge */}
-        <div className="club-badge">
-          {/*<img src="/stellar.png" alt="VIT-STELLAR" className="club-logo" />*/}
-          <span>Haneesh Yadav</span>
-        </div>
 
         {/* Title */}
         <div className="landing-title">
@@ -47,7 +60,7 @@ export default function Landing() {
             <span className="material-icons lcard-arrow">arrow_forward</span>
           </button>
 
-          <button className="landing-card landing-card--host" onClick={() => navigate('/host')}>
+          <button className="landing-card landing-card--host" onClick={handleHost}>
             <div className="lcard-icon">
               <span className="material-icons">manage_accounts</span>
             </div>

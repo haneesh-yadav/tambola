@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useRef, useCallback } from 'react';
-import { useNavigate } from 'react-router-dom';
+import { useNavigate, useParams } from 'react-router-dom';
 import { useSocket } from '../context/SocketContext';
 import Ticket from '../components/Ticket';
 import NumberBoard from '../components/NumberBoard';
@@ -46,10 +46,27 @@ function NumberTimer({ secondsLeft, total = TIMER_DURATION }) {
 
 export default function Play() {
   const navigate = useNavigate();
+  const { roomId: urlRoomId } = useParams();
   const { socket, connected } = useSocket();
 
-  const [phase, setPhase] = useState('join');
-  const [name, setName] = useState('');
+  const [playerToken] = useState(() => {
+    let token = sessionStorage.getItem('tambola_player_token');
+    if (!token) {
+      token = Math.random().toString(36).substring(2, 15) + Math.random().toString(36).substring(2, 15);
+      sessionStorage.setItem('tambola_player_token', token);
+    }
+    return token;
+  });
+
+  const [phase, setPhase] = useState(() => {
+    const activeRoom = sessionStorage.getItem('tambola_active_room');
+    const activeName = sessionStorage.getItem('tambola_active_name');
+    return (activeRoom && activeName) ? 'game' : 'join';
+  });
+
+  const [roomId, setRoomId] = useState(() => urlRoomId || sessionStorage.getItem('tambola_active_room') || '');
+  const [roomIdError, setRoomIdError] = useState('');
+  const [name, setName] = useState(() => sessionStorage.getItem('tambola_active_name') || '');
   const [nameError, setNameError] = useState('');
   const [player, setPlayer] = useState(null);
   const [gameState, setGameState] = useState({
@@ -110,11 +127,21 @@ export default function Play() {
       setGameState(state);
       setClaims(player.claims || []);
       setPhase('game');
+      
+      // Persist session details
+      sessionStorage.setItem('tambola_active_room', roomId || state.roomId);
+      sessionStorage.setItem('tambola_active_name', name || player.name);
     });
 
     socket.on('error', ({ message }) => {
       setNameError(message);
       toast(message, 'error');
+      
+      // If error occurs during active game phase, restore join panel
+      sessionStorage.removeItem('tambola_active_room');
+      sessionStorage.removeItem('tambola_active_name');
+      setPhase('join');
+      setPlayer(null);
     });
 
     socket.on('number:called', ({ number, calledNumbers }) => {
@@ -171,6 +198,18 @@ export default function Play() {
       toast(reason || 'Claim rejected', 'error');
     });
 
+    socket.on('game:hostDisconnected', () => {
+      toast('⚠️ Host disconnected. Waiting for reconnection...', 'error');
+    });
+
+    socket.on('game:roomClosed', ({ message }) => {
+      toast(message || 'Room closed by host.', 'error');
+      sessionStorage.removeItem('tambola_active_room');
+      sessionStorage.removeItem('tambola_active_name');
+      setPhase('join');
+      setPlayer(null);
+    });
+
     socket.on('state:current', ({ player: p, ...state }) => {
       if (p) {
         setPlayer(p);
@@ -192,19 +231,31 @@ export default function Play() {
       socket.off('game:winner');
       socket.off('claim:accepted');
       socket.off('claim:rejected');
+      socket.off('game:hostDisconnected');
+      socket.off('game:roomClosed');
       socket.off('state:current');
     };
-  }, [socket]);
+  }, [socket, roomId, name]);
 
-  // Reconnect recovery
+  // Session Recovery & Reconnect recovery
   useEffect(() => {
     if (socket && connected && phase === 'game') {
-      socket.emit('state:get');
+      const activeRoom = sessionStorage.getItem('tambola_active_room');
+      const activeName = sessionStorage.getItem('tambola_active_name');
+      if (activeRoom && activeName) {
+        socket.emit('player:join', { roomId: activeRoom, name: activeName, playerToken });
+      } else {
+        socket.emit('state:get');
+      }
     }
-  }, [socket, connected, phase]);
+  }, [socket, connected, phase, playerToken]);
 
   function handleJoin(e) {
     e.preventDefault();
+    if (!roomId.trim()) {
+      setRoomIdError('Room ID is required');
+      return;
+    }
     if (!name.trim() || name.trim().length < 2) {
       setNameError('Please enter at least 2 characters');
       return;
@@ -214,7 +265,8 @@ export default function Play() {
       return;
     }
     setNameError('');
-    socket.emit('player:join', { name: name.trim() });
+    setRoomIdError('');
+    socket.emit('player:join', { roomId: roomId.trim(), name: name.trim(), playerToken });
   }
 
   const handleClaim = useCallback((type) => {
@@ -241,15 +293,30 @@ export default function Play() {
           <p className="join-sub">Enter your name to get your lucky ticket!</p>
 
           <form onSubmit={handleJoin} className="join-form">
-            <div className="input-group">
+            <div className="input-group" style={{ marginBottom: '16px' }}>
+              <label>Room ID</label>
+              <input
+                className={`input ${roomIdError ? 'input-error' : ''}`}
+                placeholder="e.g. 1234"
+                value={roomId}
+                onChange={e => { setRoomId(e.target.value.trim()); setRoomIdError(''); }}
+                disabled={!!urlRoomId}
+                maxLength={10}
+                required
+              />
+              {roomIdError && <p className="error-msg">{roomIdError}</p>}
+            </div>
+
+            <div className="input-group" style={{ marginBottom: '24px' }}>
               <label>Your Name</label>
               <input
                 className={`input ${nameError ? 'input-error' : ''}`}
                 placeholder="e.g. Haneesh Yadav"
                 value={name}
                 onChange={e => { setName(e.target.value); setNameError(''); }}
-                autoFocus
+                autoFocus={!urlRoomId}
                 maxLength={30}
+                required
               />
               {nameError && <p className="error-msg">{nameError}</p>}
             </div>

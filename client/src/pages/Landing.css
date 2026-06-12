@@ -54,12 +54,14 @@
   font-weight: 700;
   letter-spacing: 2px;
   text-transform: uppercase;
+  font-family: 'Poppins', sans-serif;
 }
 
 .club-badge .material-icons { font-size: 16px; }
 
 .landing-title h1 {
   line-height: 1;
+  font-family: 'Poppins', sans-serif;
 }
 
 .title-main {
@@ -73,6 +75,7 @@
   -webkit-text-fill-color: transparent;
   background-clip: text;
   animation: shimmer 4s linear infinite;
+  font-family: 'Poppins', sans-serif;
 }
 
 .title-sub {
@@ -80,6 +83,7 @@
   font-size: 15px;
   font-weight: 400;
   margin-top: 10px;
+  font-family: 'Poppins', sans-serif;
 }
 
 .conn-status {
@@ -101,16 +105,19 @@
   width: 100%;
   display: flex;
   align-items: center;
-  gap: 18px;
-  padding: 22px 24px;
-  background: var(--surface);
-  border: 1px solid var(--border);
+  gap: 20px;
+  padding: 24px 28px;
+  background: rgba(30, 30, 40, 0.45);
+  backdrop-filter: blur(12px);
+  -webkit-backdrop-filter: blur(12px);
+  border: 1px solid rgba(255, 255, 255, 0.06);
   border-radius: var(--radius);
   cursor: pointer;
-  transition: all 0.25s ease;
+  transition: all 0.3s cubic-bezier(0.25, 0.8, 0.25, 1);
   text-align: left;
   position: relative;
   overflow: hidden;
+  box-shadow: 0 4px 24px rgba(0, 0, 0, 0.15);
 }
 
 .landing-card::before {
@@ -118,30 +125,31 @@
   position: absolute;
   inset: 0;
   opacity: 0;
-  transition: opacity 0.25s;
+  transition: opacity 0.3s ease;
+  z-index: 0;
 }
 
 .landing-card--play::before {
-  background: linear-gradient(135deg, var(--gold-dim), transparent);
+  background: radial-gradient(circle at 10% 50%, rgba(245, 200, 66, 0.08) 0%, transparent 60%);
 }
 
 .landing-card--host::before {
-  background: linear-gradient(135deg, var(--accent-glow), transparent);
+  background: radial-gradient(circle at 10% 50%, rgba(124, 111, 205, 0.12) 0%, transparent 60%);
 }
 
 .landing-card:hover {
-  transform: translateY(-2px);
-  border-color: var(--border2);
+  transform: translateY(-4px);
+  box-shadow: 0 16px 36px rgba(0, 0, 0, 0.3);
 }
 
 .landing-card--play:hover {
-  border-color: rgba(245,200,66,0.3);
-  box-shadow: 0 8px 30px var(--gold-glow);
+  border-color: rgba(245, 200, 66, 0.4);
+  box-shadow: 0 12px 30px rgba(245, 200, 66, 0.1), inset 0 1px 0 rgba(255, 255, 255, 0.1);
 }
 
 .landing-card--host:hover {
-  border-color: rgba(124,111,205,0.3);
-  box-shadow: 0 8px 30px var(--accent-glow);
+  border-color: rgba(124, 111, 205, 0.45);
+  box-shadow: 0 12px 30px rgba(124, 111, 205, 0.15), inset 0 1px 0 rgba(255, 255, 255, 0.1);
 }
 
 .landing-card:hover::before {
@@ -149,52 +157,87 @@
 }
 
 .lcard-icon {
-  width: 52px;
-  height: 52px;
-  border-radius: 14px;
+  width: 56px;
+  height: 56px;
+  border-radius: 16px;
   display: flex;
   align-items: center;
   justify-content: center;
   flex-shrink: 0;
+  z-index: 1;
+  transition: all 0.3s ease;
 }
 
 .landing-card--play .lcard-icon {
-  background: var(--gold-dim);
+  background: rgba(245, 200, 66, 0.08);
+  border: 1px solid rgba(245, 200, 66, 0.2);
   color: var(--gold);
+  box-shadow: 0 4px 12px rgba(245, 200, 66, 0.05);
 }
 
 .landing-card--host .lcard-icon {
-  background: var(--accent-glow);
+  background: rgba(124, 111, 205, 0.12);
+  border: 1px solid rgba(124, 111, 205, 0.25);
   color: var(--accent2);
+  box-shadow: 0 4px 12px rgba(124, 111, 205, 0.05);
 }
 
-.lcard-icon .material-icons { font-size: 24px; }
+.landing-card--play:hover .lcard-icon {
+  background: var(--gold);
+  color: #111118;
+  transform: scale(1.05);
+  box-shadow: 0 0 20px rgba(245, 200, 66, 0.4);
+}
+
+.landing-card--host:hover .lcard-icon {
+  background: var(--accent);
+  color: #fff;
+  transform: scale(1.05);
+  box-shadow: 0 0 20px rgba(124, 111, 205, 0.4);
+}
+
+.lcard-icon .material-icons {
+  font-size: 26px;
+}
 
 .lcard-text {
   flex: 1;
+  z-index: 1;
 }
 
 .lcard-text h2 {
-  font-size: 18px;
+  font-family: 'Outfit', 'Poppins', sans-serif;
+  font-size: 19px;
   font-weight: 700;
   margin-bottom: 4px;
-  color: var(--text2);  
+  color: var(--text);
+  letter-spacing: 0.3px;
 }
 
 .lcard-text p {
-  font-size: 13px;
+  font-family: 'Outfit', 'Poppins', sans-serif;
+  font-size: 13.5px;
   color: var(--text2);
   font-weight: 400;
+  opacity: 0.85;
 }
 
 .lcard-arrow {
   color: var(--text3);
-  transition: transform 0.2s, color 0.2s;
+  transition: all 0.3s ease;
+  z-index: 1;
 }
 
 .landing-card:hover .lcard-arrow {
-  transform: translateX(4px);
-  color: var(--text2);
+  transform: translateX(6px);
+}
+
+.landing-card--play:hover .lcard-arrow {
+  color: var(--gold);
+}
+
+.landing-card--host:hover .lcard-arrow {
+  color: var(--accent2);
 }
 
 .rules-strip {

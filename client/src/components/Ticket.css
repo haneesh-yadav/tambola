@@ -193,7 +193,7 @@
   border: 1.5px solid var(--border);
   border-radius: var(--radius-sm);
   color: var(--text2);
-  font-family: 'Poppins', sans-serif;
+  font-family: 'Outfit', 'Poppins', sans-serif;
   font-size: 10px;
   font-weight: 600;
   cursor: pointer;

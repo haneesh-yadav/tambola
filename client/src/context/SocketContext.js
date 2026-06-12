@@ -3,7 +3,9 @@ import { io } from 'socket.io-client';
 
 const SocketContext = createContext(null);
 
-const SERVER_URL = "https://vitstellar-tambola.onrender.com";
+const SERVER_URL = process.env.NODE_ENV === 'production'
+  ? "https://vitstellar-tambola.onrender.com"
+  : `${window.location.protocol}//${window.location.hostname}:3001`;
 
 export function SocketProvider({ children }) {
   const socketRef = useRef(null);

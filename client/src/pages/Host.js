@@ -1,12 +1,10 @@
 import React, { useState, useEffect, useRef } from 'react';
-import { useNavigate } from 'react-router-dom';
+import { useNavigate, useParams } from 'react-router-dom';
 import { useSocket } from '../context/SocketContext';
 import NumberBoard from '../components/NumberBoard';
 import WinnerBanner from '../components/WinnerBanner';
 import { toast, ToastContainer } from '../components/Toast';
 import './Host.css';
-
-const HOST_KEY = 'cosmicwalk2026';
 
 const WIN_LABELS = {
   topLine: 'Top Line',
@@ -28,6 +26,7 @@ const MAX_WINNERS = {
 
 export default function Host() {
   const navigate = useNavigate();
+  const { roomId } = useParams();
   const { socket, connected } = useSocket();
 
   const [gameState, setGameState] = useState({
@@ -47,25 +46,13 @@ export default function Host() {
   const [showReset, setShowReset] = useState(false);
   const prevNumRef = useRef(null);
 
-  const [authed, setAuthed] = useState(() => sessionStorage.getItem('host_authed') === 'true');
-  const [keyInput, setKeyInput] = useState('');
-  const [keyError, setKeyError] = useState('');
-
-  function handleLogin() {
-    if (keyInput === HOST_KEY) {
-      sessionStorage.setItem('host_authed', 'true');
-      setAuthed(true);
-      setKeyError('');
-    } else {
-      setKeyError('Incorrect key. Try again.');
-    }
-  }
-
-  function handleLogout() {
-    sessionStorage.removeItem('host_authed');
-    setAuthed(false);
-    setKeyInput('');
-    setKeyError('');
+  function copyInviteLink() {
+    const link = `${window.location.origin}/play/${roomId}`;
+    navigator.clipboard.writeText(link).then(() => {
+      toast('📋 Invite link copied to clipboard!', 'success');
+    }).catch(() => {
+      toast('❌ Failed to copy link', 'error');
+    });
   }
 
   useEffect(() => {
@@ -77,9 +64,9 @@ export default function Host() {
   }, [gameState.currentNumber]);
 
   useEffect(() => {
-    if (!socket) return;
+    if (!socket || !roomId || !connected) return;
 
-    socket.emit('host:join');
+    socket.emit('host:join', { roomId });
 
     socket.on('host:joined', ({ state }) => {
       setGameState(state);
@@ -150,7 +137,7 @@ export default function Host() {
       socket.off('game:ended');
       socket.off('game:winner');
     };
-  }, [socket]);
+  }, [socket, roomId, connected]);
 
   function startGame() {
     socket?.emit('host:startGame');
@@ -199,33 +186,6 @@ export default function Host() {
     { key: 'fullHouse', label: 'Full House', icon: 'home' },
   ];
 
-  if (!authed) {
-    return (
-      <div className="host-page" style={{ display:'flex', alignItems:'center', justifyContent:'center', minHeight:'100vh' }}>
-        <div style={{ background:'var(--bg2)', border:'1.5px solid var(--border2)', borderRadius:'var(--radius)', padding:'32px 24px', width:'100%', maxWidth:360 }}>
-          <div style={{ textAlign:'center', marginBottom:24 }}>
-            <span className="material-icons" style={{ fontSize:48, color:'var(--gold)' }}>lock</span>
-            <h2 style={{ color:'var(--text)', margin:'12px 0 4px', fontSize:22 }}>Host Access</h2>
-            <p style={{ color:'var(--text3)', fontSize:13 }}>Enter your host key to continue</p>
-          </div>
-          <input
-            type="password"
-            placeholder="Enter access key..."
-            value={keyInput}
-            onChange={e => setKeyInput(e.target.value)}
-            onKeyDown={e => e.key === 'Enter' && handleLogin()}
-            style={{ width:'100%', padding:'12px 14px', borderRadius:'var(--radius-sm)', border:'1.5px solid var(--border2)', background:'var(--bg3)', color:'var(--text)', fontSize:14, marginBottom:8, boxSizing:'border-box' }}
-          />
-          {keyError && <p style={{ color:'var(--red,#e05c6b)', fontSize:12, marginBottom:8 }}>{keyError}</p>}
-          <button className="btn btn-gold" style={{ width:'100%', marginTop:8 }} onClick={handleLogin}>
-            <span className="material-icons">vpn_key</span>
-            Unlock Host Panel
-          </button>
-        </div>
-      </div>
-    );
-  }
-
   return (
     <div className="host-page">
       {/* Header */}
@@ -236,10 +196,27 @@ export default function Host() {
           </button>
           <div>
             <h1 className="host-title">Host Panel</h1>
-            <p className="host-sub">VIT-STELLAR Tambola</p>
+            <p className="host-sub">Multiplayer Tambola</p>
           </div>
         </div>
-        <div className="host-header-right">
+        <div className="host-header-right" style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
+          <div className="room-id-badge" style={{
+            background: 'rgba(212, 175, 55, 0.1)',
+            border: '1px solid rgba(212, 175, 55, 0.3)',
+            color: 'var(--gold)',
+            borderRadius: 'var(--radius-sm)',
+            padding: '6px 12px',
+            fontSize: '14px',
+            fontWeight: '600',
+            display: 'flex',
+            alignItems: 'center',
+            gap: '8px',
+            cursor: 'pointer',
+            transition: 'all 0.2s ease'
+          }} onClick={copyInviteLink} title="Click to copy invite link">
+            <span className="material-icons" style={{ fontSize: '16px' }}>share</span>
+            <span>Room: {roomId}</span>
+          </div>
           <div className={`conn-dot ${connected ? 'conn-dot--on' : 'conn-dot--off'}`}>
             <span className={`dot ${connected ? 'dot-green' : 'dot-red'}`} />
             {connected ? 'Live' : 'Offline'}
@@ -437,13 +414,7 @@ export default function Host() {
             <span className="material-icons">restart_alt</span>
             Reset Game
           </button>
-          <div style={{ marginTop: 16, paddingTop: 16, borderTop: '1px solid var(--border)' }}>
-            <p className="danger-desc">Logging out will require the host key to access this panel again.</p>
-            <button className="btn btn-outline" onClick={handleLogout}>
-              <span className="material-icons">logout</span>
-              Logout
-            </button>
-          </div>
+
         </section>
       </div>
 

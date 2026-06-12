@@ -1,3 +1,4 @@
+require('dotenv').config();
 const express = require('express');
 const http = require('http');
 const { Server } = require('socket.io');
@@ -19,13 +20,13 @@ const server = http.createServer(app);
 
 const io = new Server(server, {
   cors: {
-    origin: '*',
+    origin: process.env.CORS_ORIGIN || '*',
     methods: ['GET', 'POST'],
   },
 });
 
 app.use(cors({
-  origin: '*',
+  origin: process.env.CORS_ORIGIN || '*',
   methods: ['GET', 'POST', 'OPTIONS'],
   allowedHeaders: ['Content-Type'],
 }));
@@ -33,24 +34,58 @@ app.use(express.json());
 
 // ─── Game State ──────────────────────────────────────────────────────────────
 
-let gameState = {
-  status: 'waiting',
-  calledNumbers: [],
-  currentNumber: null,
-  players: {},
-  hostSocketId: null,
-  gameId: null,
-  winners: {
-    topLine: [],
-    middleLine: [],
-    bottomLine: [],
-    corners: [],
-    earlyFive: [],
-    fullHouse: [],
-  },
-  autoCallInterval: null,
-  autoCallDelay: 5000,
-};
+const rooms = new Map();
+
+// Helper to generate a unique 4-digit roomId
+function generateRoomId() {
+  let roomId;
+  do {
+    roomId = Math.floor(1000 + Math.random() * 9000).toString();
+  } while (rooms.has(roomId));
+  return roomId;
+}
+
+// Helper to initialize a room
+function createRoom(roomId, hostSocketId) {
+  const room = {
+    roomId,
+    hostSocketId,
+    status: 'waiting',
+    calledNumbers: [],
+    currentNumber: null,
+    players: {},
+    gameId: uuidv4(),
+    winners: {
+      topLine: [],
+      middleLine: [],
+      bottomLine: [],
+      corners: [],
+      earlyFive: [],
+      fullHouse: [],
+    },
+    autoCallInterval: null,
+    autoCallDelay: 5000,
+    numberBag: generateNumberBag(),
+    cleanupTimeout: null
+  };
+  rooms.set(roomId, room);
+  return room;
+}
+
+// Helper to get public state of a room
+function getPublicState(room) {
+  if (!room) return null;
+  return {
+    roomId: room.roomId,
+    status: room.status,
+    calledNumbers: room.calledNumbers,
+    currentNumber: room.currentNumber,
+    playerCount: Object.keys(room.players).length,
+    winners: room.winners,
+    autoCallDelay: room.autoCallDelay,
+    gameId: room.gameId,
+  };
+}
 
 // ─── Tambola Ticket Generator (Guaranteed 5 per row) ─────────────────────────
 
@@ -143,59 +178,47 @@ function checkWinConditions(ticket, calledNumbers) {
 
 // ─── Socket.IO ───────────────────────────────────────────────────────────────
 
-let numberBag = [];
-
-function resetGame() {
-  if (gameState.autoCallInterval) {
-    clearInterval(gameState.autoCallInterval);
+// Helper to reset a room's game
+function resetRoomGame(room) {
+  if (room.autoCallInterval) {
+    clearInterval(room.autoCallInterval);
   }
-  numberBag = generateNumberBag();
-  gameState = {
-    status: 'waiting',
-    calledNumbers: [],
-    currentNumber: null,
-    players: {},
-    hostSocketId: gameState.hostSocketId,
-    gameId: uuidv4(),
-    winners: {
-      topLine: [],
-      middleLine: [],
-      bottomLine: [],
-      corners: [],
-      earlyFive: [],
-      fullHouse: [],
-    },
-    autoCallInterval: null,
-    autoCallDelay: gameState.autoCallDelay || 5000,
+  room.numberBag = generateNumberBag();
+  room.status = 'waiting';
+  room.calledNumbers = [];
+  room.currentNumber = null;
+  // Reset player claims
+  Object.keys(room.players).forEach(pid => {
+    room.players[pid].claims = [];
+  });
+  room.gameId = uuidv4();
+  room.winners = {
+    topLine: [],
+    middleLine: [],
+    bottomLine: [],
+    corners: [],
+    earlyFive: [],
+    fullHouse: [],
   };
+  room.autoCallInterval = null;
 }
 
-function getPublicState() {
-  return {
-    status: gameState.status,
-    calledNumbers: gameState.calledNumbers,
-    currentNumber: gameState.currentNumber,
-    playerCount: Object.keys(gameState.players).length,
-    winners: gameState.winners,
-    autoCallDelay: gameState.autoCallDelay,
-    gameId: gameState.gameId,
-  };
-}
-
-function callNextNumber() {
-  if (numberBag.length === 0) {
-    gameState.status = 'ended';
-    io.emit('game:ended', { message: 'All 90 numbers called!' });
-    if (gameState.autoCallInterval) clearInterval(gameState.autoCallInterval);
+// Helper to call next number for a room
+function callNextRoomNumber(room, io) {
+  if (room.numberBag.length === 0) {
+    room.status = 'ended';
+    io.to(room.roomId).emit('game:ended', { message: 'All 90 numbers called!' });
+    if (room.autoCallInterval) clearInterval(room.autoCallInterval);
+    room.autoCallInterval = null;
     return null;
   }
-  const num = numberBag.shift();
-  gameState.calledNumbers.push(num);
-  gameState.currentNumber = num;
-  io.emit('number:called', {
+  const num = room.numberBag.shift();
+  room.calledNumbers.push(num);
+  room.currentNumber = num;
+  io.to(room.roomId).emit('number:called', {
     number: num,
-    calledNumbers: gameState.calledNumbers,
-    remaining: numberBag.length,
+    calledNumbers: room.calledNumbers,
+    remaining: room.numberBag.length,
   });
   return num;
 }
@@ -203,17 +226,66 @@ function callNextNumber() {
 io.on('connection', (socket) => {
   console.log(`[+] Connected: ${socket.id}`);
 
-  // ── Host joins ──
-  socket.on('host:join', () => {
-    gameState.hostSocketId = socket.id;
-    socket.join('host-room');
-    socket.emit('host:joined', { gameId: gameState.gameId, state: getPublicState() });
-    console.log(`[HOST] ${socket.id}`);
+  // Create a new room (called by host)
+  socket.on('room:create', () => {
+    const roomId = generateRoomId();
+    createRoom(roomId, socket.id);
+    socket.roomId = roomId;
+    socket.isHost = true;
+    socket.join(roomId);
+    socket.join(`host-room-${roomId}`);
+    socket.emit('room:created', { roomId });
+    console.log(`[ROOM CREATED] ${roomId} by host: ${socket.id}`);
   });
 
-  // ── Player joins ──
-  socket.on('player:join', ({ name }) => {
-    if (gameState.status !== 'waiting' && gameState.status !== 'running') {
+  // Host joins/reconnects to a room
+  socket.on('host:join', ({ roomId }) => {
+    if (!roomId) {
+      socket.emit('error', { message: 'Room ID is required.' });
+      return;
+    }
+    const room = rooms.get(roomId);
+    if (!room) {
+      socket.emit('error', { message: 'Room not found.' });
+      return;
+    }
+
+    // Cancel cleanup timeout if host reconnected
+    if (room.cleanupTimeout) {
+      clearTimeout(room.cleanupTimeout);
+      room.cleanupTimeout = null;
+      console.log(`[HOST RECONNECTED] Room: ${roomId}`);
+    }
+
+    // Update host socket id
+    room.hostSocketId = socket.id;
+    socket.roomId = roomId;
+    socket.isHost = true;
+    socket.join(roomId);
+    socket.join(`host-room-${roomId}`);
+    socket.emit('host:joined', { gameId: room.gameId, state: getPublicState(room) });
+
+    // Send players list to host
+    socket.emit('host:playerUpdate', {
+      playerCount: Object.keys(room.players).length,
+      players: Object.values(room.players).map(p => ({ id: p.id, name: p.name })),
+    });
+
+    console.log(`[HOST JOINED] Room: ${roomId}, socket: ${socket.id}`);
+  });
+
+  // Player joins a room
+  socket.on('player:join', ({ roomId, name, playerToken }) => {
+    if (!roomId) {
+      socket.emit('error', { message: 'Room ID is required.' });
+      return;
+    }
+    const room = rooms.get(roomId.toString().trim());
+    if (!room) {
+      socket.emit('error', { message: 'Room not found. Please check Room ID.' });
+      return;
+    }
+    if (room.status !== 'waiting' && room.status !== 'running') {
       socket.emit('error', { message: 'Game is not accepting players right now.' });
       return;
     }
@@ -221,100 +293,132 @@ io.on('connection', (socket) => {
       socket.emit('error', { message: 'Name must be at least 2 characters.' });
       return;
     }
+    if (!playerToken) {
+      socket.emit('error', { message: 'Player token is required.' });
+      return;
+    }
 
-    const ticket = generateTicket();
-    gameState.players[socket.id] = {
-      id: socket.id,
-      name: name.trim(),
-      ticket,
-      claims: [],
-      joinedAt: Date.now(),
-    };
+    socket.roomId = room.roomId;
+    socket.playerToken = playerToken;
+    socket.isPlayer = true;
+    socket.join(room.roomId);
 
-    socket.join('players-room');
+    let player = Object.values(room.players).find(p => p.token === playerToken);
+
+    if (player) {
+      console.log(`[PLAYER RECONNECTED] Room: ${room.roomId}, Token: ${playerToken}, Old Socket: ${player.id}, New Socket: ${socket.id}`);
+      
+      delete room.players[player.id];
+      
+      if (player.disconnectTimeout) {
+        clearTimeout(player.disconnectTimeout);
+        player.disconnectTimeout = null;
+      }
+
+      player.id = socket.id;
+      player.name = name.trim();
+      player.status = 'active';
+      room.players[socket.id] = player;
+    } else {
+      const ticket = generateTicket();
+      player = {
+        id: socket.id,
+        token: playerToken,
+        name: name.trim(),
+        ticket,
+        claims: [],
+        status: 'active',
+        joinedAt: Date.now(),
+        disconnectTimeout: null,
+      };
+      room.players[socket.id] = player;
+      console.log(`[PLAYER JOINED] Room: ${room.roomId}, Name: ${name} (${socket.id})`);
+    }
+
     socket.emit('player:joined', {
-      player: gameState.players[socket.id],
-      state: getPublicState(),
+      player,
+      state: getPublicState(room),
     });
 
-    io.to('host-room').emit('host:playerUpdate', {
-      playerCount: Object.keys(gameState.players).length,
-      players: Object.values(gameState.players).map(p => ({ id: p.id, name: p.name })),
+    io.to(`host-room-${room.roomId}`).emit('host:playerUpdate', {
+      playerCount: Object.keys(room.players).length,
+      players: Object.values(room.players).map(p => ({ id: p.id, name: p.name, status: p.status })),
     });
-
-    console.log(`[PLAYER] ${name} (${socket.id})`);
   });
 
-  // ── Host: start game ──
+  // Host actions
   socket.on('host:startGame', () => {
-    if (socket.id !== gameState.hostSocketId) return;
-    if (gameState.status === 'running') return;
+    const room = rooms.get(socket.roomId);
+    if (!room || socket.id !== room.hostSocketId) return;
+    if (room.status === 'running') return;
 
-    numberBag = generateNumberBag();
-    gameState.status = 'running';
-    gameState.calledNumbers = [];
-    gameState.currentNumber = null;
-    gameState.winners = {
+    room.numberBag = generateNumberBag();
+    room.status = 'running';
+    room.calledNumbers = [];
+    room.currentNumber = null;
+    room.winners = {
       topLine: [], middleLine: [], bottomLine: [],
       corners: [], earlyFive: [], fullHouse: [],
     };
 
-    io.emit('game:started', getPublicState());
-    console.log('[GAME] Started');
+    io.to(room.roomId).emit('game:started', getPublicState(room));
+    console.log(`[GAME STARTED] Room: ${room.roomId}`);
   });
 
-  // ── Host: call number manually ──
   socket.on('host:callNumber', () => {
-    if (socket.id !== gameState.hostSocketId) return;
-    if (gameState.status !== 'running') return;
-    callNextNumber();
+    const room = rooms.get(socket.roomId);
+    if (!room || socket.id !== room.hostSocketId) return;
+    if (room.status !== 'running') return;
+    callNextRoomNumber(room, io);
   });
 
-  // ── Host: toggle auto-call ──
   socket.on('host:toggleAutoCall', ({ enabled, delay }) => {
-    if (socket.id !== gameState.hostSocketId) return;
-    if (delay) gameState.autoCallDelay = delay;
+    const room = rooms.get(socket.roomId);
+    if (!room || socket.id !== room.hostSocketId) return;
+    if (delay) room.autoCallDelay = delay;
 
     if (enabled) {
-      if (gameState.autoCallInterval) clearInterval(gameState.autoCallInterval);
-      gameState.autoCallInterval = setInterval(() => {
-        if (gameState.status === 'running') callNextNumber();
-        else clearInterval(gameState.autoCallInterval);
-      }, gameState.autoCallDelay);
-      socket.emit('host:autoCallStatus', { enabled: true, delay: gameState.autoCallDelay });
+      if (room.autoCallInterval) clearInterval(room.autoCallInterval);
+      room.autoCallInterval = setInterval(() => {
+        if (room.status === 'running') callNextRoomNumber(room, io);
+        else clearInterval(room.autoCallInterval);
+      }, room.autoCallDelay);
+      socket.emit('host:autoCallStatus', { enabled: true, delay: room.autoCallDelay });
     } else {
-      if (gameState.autoCallInterval) clearInterval(gameState.autoCallInterval);
-      gameState.autoCallInterval = null;
+      if (room.autoCallInterval) clearInterval(room.autoCallInterval);
+      room.autoCallInterval = null;
       socket.emit('host:autoCallStatus', { enabled: false });
     }
   });
 
-  // ── Host: pause/resume ──
   socket.on('host:pauseGame', () => {
-    if (socket.id !== gameState.hostSocketId) return;
-    if (gameState.status === 'running') {
-      gameState.status = 'paused';
-      if (gameState.autoCallInterval) clearInterval(gameState.autoCallInterval);
-      io.emit('game:paused');
-    } else if (gameState.status === 'paused') {
-      gameState.status = 'running';
-      io.emit('game:resumed', getPublicState());
+    const room = rooms.get(socket.roomId);
+    if (!room || socket.id !== room.hostSocketId) return;
+    if (room.status === 'running') {
+      room.status = 'paused';
+      if (room.autoCallInterval) clearInterval(room.autoCallInterval);
+      io.to(room.roomId).emit('game:paused');
+    } else if (room.status === 'paused') {
+      room.status = 'running';
+      io.to(room.roomId).emit('game:resumed', getPublicState(room));
     }
   });
 
-  // ── Host: reset game ──
   socket.on('host:resetGame', () => {
-    if (socket.id !== gameState.hostSocketId) return;
-    resetGame();
-    io.emit('game:reset', getPublicState());
-    console.log('[GAME] Reset');
+    const room = rooms.get(socket.roomId);
+    if (!room || socket.id !== room.hostSocketId) return;
+    resetRoomGame(room);
+    io.to(room.roomId).emit('game:reset', getPublicState(room));
+    console.log(`[GAME RESET] Room: ${room.roomId}`);
   });
 
-  // ── Player: claim win ──
+  // Player action: claim win
   socket.on('player:claim', ({ type }) => {
-    const player = gameState.players[socket.id];
+    const room = rooms.get(socket.roomId);
+    if (!room) return;
+    const player = room.players[socket.id];
     if (!player) return;
-    if (gameState.status !== 'running') {
+    if (room.status !== 'running') {
       socket.emit('claim:rejected', { type, reason: 'Game is not running' });
       return;
     }
@@ -322,20 +426,17 @@ io.on('connection', (socket) => {
     const validTypes = ['topLine', 'middleLine', 'bottomLine', 'corners', 'earlyFive', 'fullHouse'];
     if (!validTypes.includes(type)) return;
 
-    // Check if already claimed by this player
     if (player.claims.includes(type)) {
       socket.emit('claim:rejected', { type, reason: 'You already claimed this prize' });
       return;
     }
 
-    // Check if max winners reached
-    if (gameState.winners[type].length >= MAX_WINNERS[type]) {
+    if (room.winners[type].length >= MAX_WINNERS[type]) {
       socket.emit('claim:rejected', { type, reason: `All ${MAX_WINNERS[type]} winners for ${type} already found!` });
       return;
     }
 
-    // Verify the claim
-    const wins = checkWinConditions(player.ticket, gameState.calledNumbers);
+    const wins = checkWinConditions(player.ticket, room.calledNumbers);
     const typeToCheck = {
       topLine: 'row0',
       middleLine: 'row1',
@@ -347,57 +448,87 @@ io.on('connection', (socket) => {
     const key = typeToCheck[type];
 
     if (wins[key]) {
-      gameState.winners[type].push({ id: socket.id, name: player.name });
+      room.winners[type].push({ id: socket.id, name: player.name });
       player.claims.push(type);
 
-      const isFull = gameState.winners[type].length >= MAX_WINNERS[type];
+      const isFull = room.winners[type].length >= MAX_WINNERS[type];
       const winData = {
         type,
         player: { id: socket.id, name: player.name },
-        winners: gameState.winners[type],
+        winners: room.winners[type],
         isFull,
       };
-      io.emit('game:winner', winData);
+      io.to(room.roomId).emit('game:winner', winData);
       socket.emit('claim:accepted', { type });
 
-      console.log(`[WIN] ${player.name} -> ${type} (${gameState.winners[type].length}/${MAX_WINNERS[type]})`);
+      console.log(`[WIN] Room: ${room.roomId}, ${player.name} -> ${type} (${room.winners[type].length}/${MAX_WINNERS[type]})`);
     } else {
       socket.emit('claim:rejected', { type, reason: 'Numbers not matching. Keep playing!' });
     }
   });
 
-  // ── Get current state ──
+  // Get current state
   socket.on('state:get', () => {
-    const player = gameState.players[socket.id];
+    const room = rooms.get(socket.roomId);
+    if (!room) return;
+    const player = room.players[socket.id];
     socket.emit('state:current', {
-      ...getPublicState(),
+      ...getPublicState(room),
       player: player || null,
     });
   });
 
-  // ── Disconnect ──
+  // Disconnect
   socket.on('disconnect', () => {
-    if (gameState.players[socket.id]) {
-      const name = gameState.players[socket.id].name;
-      delete gameState.players[socket.id];
-      io.to('host-room').emit('host:playerUpdate', {
-        playerCount: Object.keys(gameState.players).length,
-        players: Object.values(gameState.players).map(p => ({ id: p.id, name: p.name })),
-      });
-      console.log(`[-] Disconnected player: ${name}`);
-    } else if (socket.id === gameState.hostSocketId) {
-      console.log('[-] Host disconnected');
+    const roomId = socket.roomId;
+    if (!roomId) return;
+    const room = rooms.get(roomId);
+    if (!room) return;
+
+    if (socket.isHost) {
+      console.log(`[-] Host disconnected from room: ${roomId}. Waiting 2 mins for reconnect...`);
+      // Notify players
+      io.to(roomId).emit('game:hostDisconnected');
+      // Set cleanup timeout
+      room.cleanupTimeout = setTimeout(() => {
+        if (room.autoCallInterval) clearInterval(room.autoCallInterval);
+        io.to(roomId).emit('game:roomClosed', { message: 'Host disconnected and room closed.' });
+        rooms.delete(roomId);
+        console.log(`[ROOM CLOSED] Room: ${roomId} due to host disconnect timeout`);
+      }, 1000 * 60 * 2); // 2 minutes
+    } else if (socket.isPlayer) {
+      const player = room.players[socket.id];
+      if (player) {
+        console.log(`[-] Player disconnected: ${player.name} from room: ${roomId}. Waiting 2 mins for reconnect...`);
+        player.status = 'inactive';
+        
+        io.to(`host-room-${roomId}`).emit('host:playerUpdate', {
+          playerCount: Object.keys(room.players).length,
+          players: Object.values(room.players).map(p => ({ id: p.id, name: p.name, status: p.status })),
+        });
+
+        player.disconnectTimeout = setTimeout(() => {
+          if (room.players[player.id]) {
+            const name = room.players[player.id].name;
+            delete room.players[player.id];
+            io.to(`host-room-${roomId}`).emit('host:playerUpdate', {
+              playerCount: Object.keys(room.players).length,
+              players: Object.values(room.players).map(p => ({ id: p.id, name: p.name, status: p.status })),
+            });
+            console.log(`[PLAYER REMOVED] Room: ${roomId}, Player: ${name} due to disconnect timeout`);
+          }
+        }, 1000 * 60 * 2); // 2 minutes
+      }
     }
   });
 });
 
 // ─── Health Check ─────────────────────────────────────────────────────────────
 
-app.get('/health', (_, res) => res.json({ ok: true, players: Object.keys(gameState.players).length, status: gameState.status }));
+app.get('/health', (_, res) => res.json({ ok: true, activeRooms: rooms.size }));
 
 // ─── Init ─────────────────────────────────────────────────────────────────────
 
-resetGame();
 const PORT = process.env.PORT || 3001;
 server.listen(PORT, () => console.log(`🎯 Tambola server running on port ${PORT}`));
 
