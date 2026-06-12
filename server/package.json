@@ -1,7 +1,7 @@
 {
   "name": "tambola-server",
   "version": "1.0.0",
-  "description": "VIT-STELLAR Tambola Game Server",
+  "description": "Tambola Game Server",
   "main": "index.js",
   "scripts": {
     "start": "node index.js",
