@@ -6,14 +6,16 @@ A real-time, multiplayer Tambola (Housie/Bingo) web application built for tambol
 
 ## ✨ Features
 
-- **Real-time multiplayer** via WebSockets (Socket.IO) — 200+ players simultaneously
+- **Multi-room hosting** — create separate parallel rooms (4-digit unique code) so anyone can host and play at the same time
+- **Session Recovery & Reconnection protection** — players can refresh or disconnect and resume with their ticket intact
+- **Real-time multiplayer** via WebSockets (Socket.IO) — 200+ players simultaneously per room
 - **Auto-generated tickets** — valid Tambola tickets (3×9 grid, 15 numbers per ticket)
 - **6 win categories** — Top Line, Middle Line, Bottom Line, Corners, Early Five, Full House
 - **Instant win verification** — server-side validation of all claims
 - **Auto-call mode** — host can set intervals from 3–30 seconds
 - **Live number board** — all 90 numbers tracked in real time
 - **Mobile-first design** — fully responsive, optimized for phones
-- **Minimal, aesthetic UI** — dark theme, Poppins font, Material Icons
+- **Minimal, aesthetic UI** — dark theme, Outfit + Poppins fonts, Material Icons
 
 ---
 
@@ -80,20 +82,20 @@ tambola/
 ## 🎮 How to Play
 
 ### For the Host
-1. Open `/host` on any browser (typically projected on a screen)
-2. Wait for players to join (player count shown in header)
-3. Click **Start Game** when ready
-4. Click **Call Number** to manually call numbers, OR
-5. Toggle **Auto-Call** and set an interval (3–30 seconds)
-6. Monitor winners on the Winners Board
-7. Use **Pause** to pause mid-game if needed
-8. **Reset** to start a new round
+1. Open the landing page and click **Host Game**
+2. A new room will be created with a unique 4-digit code (e.g. `/host/4831`)
+3. Click the **Room ID Badge** to copy the shareable direct invite link
+4. Wait for players to join (player status and count updated live in header)
+5. Click **Start Game** when ready
+6. Click **Call Number** to manually call numbers, OR toggle **Auto-Call** and set an interval (3–30 seconds)
+7. Monitor winners on the Winners Board
+8. Use **Pause** to pause mid-game if needed or **Reset** to restart
 
 ### For Players
-1. Open the website URL on their phone
-2. Click **Join Game** → Enter their name → Get ticket
+1. Open the shared direct invite link on your phone (e.g. `http://.../play/4831`), OR open the landing page, click **Join Game**, and enter the 4-digit Room ID manually
+2. Enter your name and click **Get My Ticket**
 3. Watch numbers being called live
-4. Tap **Claim** buttons when they have a winning pattern
+4. Tap **Claim** buttons when you have a winning pattern
 5. The server verifies claims automatically — only valid claims are accepted
 
 ---
@@ -118,10 +120,10 @@ Each category can only be won **once**. Claims are verified server-side — no c
 | Layer | Technology |
 |---|---|
 | Frontend | React 18, React Router v6 |
-| Backend | Node.js, Express |
+| Backend | Node.js, Express, dotenv |
 | Real-time | Socket.IO (WebSockets) |
-| Styling | CSS Variables, Poppins, Material Icons |
-| Fonts | Google Fonts (Poppins) |
+| Styling | CSS Variables, glassmorphism, modern gradients, hover animations |
+| Fonts | Google Fonts (Outfit, Poppins) |
 
 ---
 
